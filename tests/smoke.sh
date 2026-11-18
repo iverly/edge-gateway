@@ -8,11 +8,12 @@ IMAGE=${1:-}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 NET=edge-gateway-smoke
 SERVER=edge-gateway-smoke-server
+WEB=edge-gateway-smoke-web
 PORT=18443
 WORK=$(mktemp -d)
 
 cleanup() {
-  docker rm -f "$SERVER" >/dev/null 2>&1 || true
+  docker rm -f "$SERVER" "$WEB" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -62,6 +63,9 @@ docker run --rm -e QR=0 -v "$WORK:/w" "$IMAGE" links /w/node.json >"$WORK/links.
   fail "share links exit code"
 [ "$(wc -l <"$WORK/links.txt" | tr -d ' ')" = 2 ] || fail "share links count"
 
+# A web server on the node's private network stands for its LAN.
+docker run -d --name "$WEB" --network "$NET" nginx:alpine >/dev/null
+
 for lane in reality hy2; do
   echo "== reaches the internet through $lane"
   jq --arg tag "smoke-$lane" '{
@@ -73,6 +77,26 @@ for lane in reality hy2; do
     sing-box run -c /w/$lane.json & sleep 2
     curl -fsS -o /dev/null --max-time 15 -x socks5h://127.0.0.1:2080 https://www.gstatic.com/generate_204
   " || fail "$lane lane"
+  echo "== refuses the node's private network through $lane"
+  if docker run --rm --network "$NET" -v "$WORK:/w" --entrypoint sh "$IMAGE" -c "
+    sing-box run -c /w/$lane.json & sleep 2
+    curl -fsS -o /dev/null --max-time 10 -x socks5h://127.0.0.1:2080 http://$WEB/
+  " >/dev/null 2>&1; then fail "$lane lane reached a private address"; fi
 done
+
+echo "== reaches the node's private network with ALLOW_PRIVATE=1"
+docker rm -f "$SERVER" >/dev/null
+docker run -d --name "$SERVER" --network "$NET" -v "$WORK/state:/data" \
+  -e NODE_NAME=smoke -e PUBLIC_HOST="$SERVER" -e REALITY_PORT=$PORT -e ALLOW_PRIVATE=1 \
+  "$IMAGE" >/dev/null
+sleep 4
+docker exec "$SERVER" edge-gateway node >"$WORK/node2.json"
+docker run --rm -v "$WORK:/w" "$IMAGE" profile /w/node2.json |
+  jq '{log: {level: "error"}, inbounds: [{type: "mixed", listen: "127.0.0.1", listen_port: 2080}],
+       outbounds: [.outbounds[] | select(.tag == "smoke-reality")]}' >"$WORK/open.json"
+docker run --rm --network "$NET" -v "$WORK:/w" --entrypoint sh "$IMAGE" -c "
+  sing-box run -c /w/open.json & sleep 2
+  curl -fsS -o /dev/null --max-time 10 -x socks5h://127.0.0.1:2080 http://$WEB/
+" || fail "ALLOW_PRIVATE=1 did not reach the private network"
 
 echo "OK"
