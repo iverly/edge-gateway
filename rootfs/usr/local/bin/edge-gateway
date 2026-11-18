@@ -200,6 +200,80 @@ cmd_node() {
     }'
 }
 
+# Client profile for the sing-box apps (macOS, iOS, Android) and the sing-box CLI on a travel router.
+# Chinese domains and IPs go direct, a fixed list of foreign services is forced through the tunnel,
+# everything else takes the fastest lane among all nodes.
+cmd_profile() {
+  [ $# -gt 0 ] || die "usage: profile <node.json>..."
+  jq -s '
+    def outs(n):
+      (if n.reality then [{
+        type: "vless", tag: "\(n.name)-reality", server: n.reality.host, server_port: n.reality.port,
+        uuid: n.reality.uuid, flow: "xtls-rprx-vision",
+        tls: {enabled: true, server_name: n.reality.sni, utls: {enabled: true, fingerprint: "chrome"},
+              reality: {enabled: true, public_key: n.reality.public_key, short_id: n.reality.short_id}}
+      }] else [] end)
+      + (if n.hy2 then [({
+        type: "hysteria2", tag: "\(n.name)-hy2", server: n.hy2.host, server_port: n.hy2.port,
+        password: n.hy2.password, obfs: {type: "salamander", password: n.hy2.obfs_password},
+        tls: {enabled: true, server_name: n.hy2.sni, alpn: ["h3"], certificate: n.hy2.certificate}
+      } + (if n.hy2.hop_ports then {server_ports: [n.hy2.hop_ports | sub("-"; ":")], hop_interval: "30s"} else {} end))]
+      else [] end)
+      + (if n.cf then [{
+        type: "vless", tag: "\(n.name)-cf", server: n.cf.host, server_port: 443, uuid: n.cf.uuid,
+        tls: {enabled: true, server_name: n.cf.host, utls: {enabled: true, fingerprint: "chrome"}},
+        transport: {type: "ws", path: n.cf.path, headers: {Host: n.cf.host},
+                    max_early_data: 2048, early_data_header_name: "Sec-WebSocket-Protocol"}
+      }] else [] end);
+    (map(outs(.)) | add) as $lanes
+    | ($lanes | map(.tag)) as $tags
+    | {
+        log: {level: "warn"},
+        dns: {
+          servers: [
+            {type: "https", tag: "remote", server: "1.1.1.1", detour: "proxy"},
+            {type: "udp", tag: "cn", server: "223.5.5.5"}
+          ],
+          rules: [{rule_set: "geosite-cn", server: "cn"}],
+          final: "remote",
+          strategy: "ipv4_only"
+        },
+        inbounds: [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}],
+        outbounds: (
+          [{type: "selector", tag: "proxy", outbounds: (["auto"] + $tags), default: "auto"},
+           {type: "urltest", tag: "auto", outbounds: $tags, url: "https://www.gstatic.com/generate_204",
+            interval: "1m", tolerance: 80}]
+          + $lanes
+          + [{type: "direct", tag: "direct"}]
+        ),
+        route: {
+          rules: [
+            {action: "sniff"},
+            {protocol: "dns", action: "hijack-dns"},
+            {ip_is_private: true, outbound: "direct"},
+            {domain_suffix: ["anthropic.com", "claude.ai", "claude.com", "openai.com", "chatgpt.com",
+                             "google.com", "googleapis.com", "gstatic.com", "youtube.com", "gmail.com",
+                             "github.com", "githubusercontent.com", "slack.com", "notion.so", "figma.com",
+                             "linear.app", "x.com", "whatsapp.net", "telegram.org"],
+             outbound: "proxy"},
+            {rule_set: ["geosite-cn", "geoip-cn"], outbound: "direct"}
+          ],
+          rule_set: [
+            {type: "remote", tag: "geosite-cn", format: "binary",
+             url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
+             download_detour: "proxy"},
+            {type: "remote", tag: "geoip-cn", format: "binary",
+             url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
+             download_detour: "proxy"}
+          ],
+          final: "proxy",
+          auto_detect_interface: true,
+          default_domain_resolver: "cn"
+        },
+        experimental: {cache_file: {enabled: true}}
+      }' "$@"
+}
+
 usage() {
   cat <<'EOF'
 edge-gateway <command>
@@ -207,6 +281,7 @@ edge-gateway <command>
   check                 validate the environment and the server config without serving
   health                container health check
   node                  print this node's client descriptor (contains secrets)
+  profile <node.json>…  build a sing-box client profile from one or more descriptors
 EOF
 }
 
@@ -215,6 +290,10 @@ case "${1:-serve}" in
   check) cmd_check ;;
   health) cmd_health ;;
   node) cmd_node ;;
+  profile)
+    shift
+    cmd_profile "$@"
+    ;;
   -h | --help | help) usage ;;
   *)
     usage
