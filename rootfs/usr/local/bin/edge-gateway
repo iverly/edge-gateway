@@ -25,6 +25,9 @@ HY2_PUBLIC_PORT=${HY2_PUBLIC_PORT:-$HY2_PORT}
 HY2_HOP_PORTS=${HY2_HOP_PORTS:-}
 CF_TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
 CF_HOSTNAME=${CF_HOSTNAME:-}
+# A leaked client key must not open the node's own network: private destinations are refused
+# unless ALLOW_PRIVATE=1.
+ALLOW_PRIVATE=${ALLOW_PRIVATE:-0}
 
 log() { printf '%s edge-gateway: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 die() {
@@ -87,7 +90,8 @@ render_server() {
     --arg priv "$REALITY_PRIVATE_KEY" --arg sid "$REALITY_SHORT_ID" \
     --arg hy2_port "$HY2_PORT" --arg hy2_pw "$HY2_PASSWORD" --arg obfs "$HY2_OBFS_PASSWORD" \
     --arg cert "$HY2_CERT" --arg key "$HY2_KEY" \
-    --arg cf "$CF_TUNNEL_TOKEN" --arg ws_port "$WS_PORT" --arg ws_uuid "$WS_UUID" --arg ws_path "$WS_PATH" '
+    --arg cf "$CF_TUNNEL_TOKEN" --arg ws_port "$WS_PORT" --arg ws_uuid "$WS_UUID" --arg ws_path "$WS_PATH" \
+    --arg allow_private "$ALLOW_PRIVATE" '
     {
       log: {level: "warn", timestamp: true},
       inbounds: (
@@ -111,7 +115,13 @@ render_server() {
                       early_data_header_name: "Sec-WebSocket-Protocol"}
         }] else [] end)
       ),
-      outbounds: [{type: "direct", tag: "direct"}]
+      outbounds: [{type: "direct", tag: "direct"}],
+      route: (if $allow_private == "1" then {} else {
+        rules: [
+          {action: "resolve"},
+          {ip_is_private: true, action: "reject"}
+        ]
+      } end)
     }' >"$SERVER_CONFIG"
   chmod 600 "$SERVER_CONFIG"
   sing-box check -c "$SERVER_CONFIG"
