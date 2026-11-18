@@ -86,7 +86,7 @@ done
 
 echo "== reaches the node's private network with ALLOW_PRIVATE=1"
 docker rm -f "$SERVER" >/dev/null
-docker run -d --name "$SERVER" --network "$NET" -v "$WORK/state:/data" \
+docker run -d --name "$SERVER" --network "$NET" \
   -e NODE_NAME=smoke -e PUBLIC_HOST="$SERVER" -e REALITY_PORT=$PORT -e ALLOW_PRIVATE=1 \
   "$IMAGE" >/dev/null
 sleep 4
