@@ -178,12 +178,35 @@ cmd_health() {
   echo ok
 }
 
+# Node descriptor: everything a client needs to reach this node. Contains secrets.
+cmd_node() {
+  validate
+  ensure_state
+  jq -n \
+    --arg name "$NODE_NAME" --arg host "$PUBLIC_HOST" \
+    --arg reality_port "$REALITY_PORT" --arg sni "$REALITY_SNI" --arg uuid "$UUID" \
+    --arg pub "$REALITY_PUBLIC_KEY" --arg sid "$REALITY_SHORT_ID" \
+    --arg hy2_port "$HY2_PORT" --arg hop "$HY2_HOP_PORTS" --arg hy2_pw "$HY2_PASSWORD" \
+    --arg obfs "$HY2_OBFS_PASSWORD" --arg hy2_sni "$HY2_SNI" --rawfile cert "$HY2_CERT" \
+    --arg cf "$CF_TUNNEL_TOKEN" --arg cf_host "$CF_HOSTNAME" --arg ws_uuid "$WS_UUID" --arg ws_path "$WS_PATH" '
+    {
+      name: $name,
+      reality: (if $reality_port != "" then {host: $host, port: ($reality_port | tonumber), uuid: $uuid,
+                 sni: $sni, public_key: $pub, short_id: $sid} else null end),
+      hy2: (if $hy2_port != "" then {host: $host, port: ($hy2_port | tonumber),
+             hop_ports: (if $hop != "" then $hop else null end), password: $hy2_pw,
+             obfs_password: $obfs, sni: $hy2_sni, certificate: $cert} else null end),
+      cf: (if $cf != "" then {host: $cf_host, uuid: $ws_uuid, path: $ws_path} else null end)
+    }'
+}
+
 usage() {
   cat <<'EOF'
 edge-gateway <command>
   serve                 run the node (default)
   check                 validate the environment and the server config without serving
   health                container health check
+  node                  print this node's client descriptor (contains secrets)
 EOF
 }
 
@@ -191,6 +214,7 @@ case "${1:-serve}" in
   serve) cmd_serve ;;
   check) cmd_check ;;
   health) cmd_health ;;
+  node) cmd_node ;;
   -h | --help | help) usage ;;
   *)
     usage
