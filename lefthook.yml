@@ -1,0 +1,17 @@
+# Git hooks of the repository. Fast checks on staged files only; the smoke test runs in CI.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: shell
+      glob: '{*.sh,rootfs/usr/local/bin/*}'
+      run: shfmt -i 2 -ci -w {staged_files} && shellcheck {staged_files}
+      stage_fixed: true
+    - name: format
+      glob: '*.{js,mjs,json,md,yml,yaml}'
+      run: pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
