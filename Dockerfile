@@ -9,7 +9,7 @@ RUN apk add --no-cache bash ca-certificates curl iptables ip6tables jq libqrenco
 COPY --from=sing-box /usr/local/bin/sing-box /usr/local/bin/sing-box
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 COPY rootfs/ /
-RUN chmod 755 /usr/local/bin/edge-gateway /usr/local/bin/edge-watch
+RUN chmod 755 /usr/local/bin/edge-gateway /usr/local/bin/edge-watch /usr/local/bin/edge-ddns
 
 ENV DATA_DIR=/data
 VOLUME /data
