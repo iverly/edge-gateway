@@ -1,0 +1,27 @@
+# Changelog generated at each release, grouped by scope.
+[changelog]
+header = ""
+body = """
+{% for scope, commits in commits | group_by(attribute="scope") %}
+### {{ scope }}
+{% for commit in commits %}
+- {{ commit.group }}: {{ commit.message | split(pat="\n") | first | trim }}\
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+tag_pattern = "v[0-9]*"
+commit_parsers = [
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^feat", group = "feat" },
+  { message = "^fix", group = "fix" },
+  { message = "^perf", group = "perf" },
+  { message = "^refactor", group = "refactor" },
+  { message = "^docs", group = "docs" },
+  { message = "^test", group = "test" },
+  { message = "^(chore|ci|build|style)", group = "chore" },
+]
