@@ -274,6 +274,21 @@ cmd_profile() {
       }' "$@"
 }
 
+# Share links for apps that import URIs (Shadowrocket, v2rayN, Hiddify), with a QR code each.
+cmd_links() {
+  [ $# -gt 0 ] || die "usage: links <node.json>..."
+  local uri
+  jq -r '
+    . as $n
+    | (if .reality then "vless://\(.reality.uuid)@\(.reality.host):\(.reality.port)?encryption=none&flow=xtls-rprx-vision&security=reality&sni=\(.reality.sni)&fp=chrome&pbk=\(.reality.public_key)&sid=\(.reality.short_id)&type=tcp#\($n.name)-reality" else empty end),
+      (if .hy2 then "hysteria2://\(.hy2.password)@\(.hy2.host):\(.hy2.port)?sni=\(.hy2.sni)&insecure=1&obfs=salamander&obfs-password=\(.hy2.obfs_password)\(if .hy2.hop_ports then "&mport=\(.hy2.hop_ports)" else "" end)#\($n.name)-hy2" else empty end),
+      (if .cf then "vless://\(.cf.uuid)@\(.cf.host):443?encryption=none&security=tls&sni=\(.cf.host)&fp=chrome&type=ws&host=\(.cf.host)&path=\(.cf.path | @uri)#\($n.name)-cf" else empty end)
+  ' "$@" | while read -r uri; do
+    echo "$uri"
+    if [ "${QR:-1}" = 1 ]; then qrencode -t ANSIUTF8 "$uri"; fi
+  done
+}
+
 usage() {
   cat <<'EOF'
 edge-gateway <command>
@@ -282,6 +297,7 @@ edge-gateway <command>
   health                container health check
   node                  print this node's client descriptor (contains secrets)
   profile <node.json>…  build a sing-box client profile from one or more descriptors
+  links <node.json>…    print share links and QR codes (QR=0 to skip QR codes)
 EOF
 }
 
@@ -293,6 +309,10 @@ case "${1:-serve}" in
   profile)
     shift
     cmd_profile "$@"
+    ;;
+  links)
+    shift
+    cmd_links "$@"
     ;;
   -h | --help | help) usage ;;
   *)
