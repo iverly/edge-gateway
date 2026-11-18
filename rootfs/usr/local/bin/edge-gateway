@@ -259,7 +259,8 @@ cmd_profile() {
         },
         inbounds: [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}],
         outbounds: (
-          [{type: "selector", tag: "proxy", outbounds: (["auto"] + $tags), default: "auto"},
+          [{type: "selector", tag: "proxy", outbounds: (["auto"] + $tags), default: "auto",
+            interrupt_exist_connections: true},
            {type: "urltest", tag: "auto", outbounds: $tags, url: "https://www.gstatic.com/generate_204",
             interval: "1m", tolerance: 80}]
           + $lanes
