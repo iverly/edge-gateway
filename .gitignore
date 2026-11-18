@@ -1,0 +1,7 @@
+.env
+data/
+node_modules/
+docs/superpowers/
+.superpowers/
+/.worktrees/
+.DS_Store
