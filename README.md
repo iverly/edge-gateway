@@ -52,6 +52,12 @@ docker compose run --rm -v "$PWD:/w" edge-gateway links /w/home.json  # share li
 
 Download the profile's rule sets once before travelling: the apps cache them.
 
+## Dynamic DNS
+
+A node at home whose public IP changes can keep its `PUBLIC_HOST` record up to date on
+Cloudflare: set `DDNS_CF_API_TOKEN` and `DDNS_CF_ZONE_ID`, and the record follows the IP within
+`DDNS_INTERVAL` seconds.
+
 ## Alerts
 
 With `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, a node watches its own lanes and the peers in
