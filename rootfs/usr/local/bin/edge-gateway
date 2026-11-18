@@ -280,10 +280,10 @@ cmd_profile() {
           rule_set: [
             {type: "remote", tag: "geosite-cn", format: "binary",
              url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
-             download_detour: "proxy"},
+             http_client: {detour: "proxy"}},
             {type: "remote", tag: "geoip-cn", format: "binary",
              url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
-             download_detour: "proxy"}
+             http_client: {detour: "proxy"}}
           ],
           final: "proxy",
           auto_detect_interface: true,
