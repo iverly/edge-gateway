@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# edge-gateway: one exit node serving up to three lanes.
+#   reality  VLESS + Reality over TCP, looks like a TLS visit to REALITY_SNI
+#   hy2      Hysteria2 over UDP (QUIC, salamander obfuscation), optional port hopping
+#   cf       VLESS over WebSocket on loopback, exposed through a Cloudflare tunnel (no open port)
+set -euo pipefail
+
+DATA_DIR=${DATA_DIR:-/data}
+STATE=$DATA_DIR/state.env
+SERVER_CONFIG=$DATA_DIR/server.json
+HY2_CERT=$DATA_DIR/hy2.crt
+HY2_KEY=$DATA_DIR/hy2.key
+HY2_SNI=edge-gateway.local
+WS_PORT=${WS_PORT:-10080}
+CF_METRICS=127.0.0.1:20241
+
+NODE_NAME=${NODE_NAME:-$(hostname)}
+PUBLIC_HOST=${PUBLIC_HOST:-}
+REALITY_PORT=${REALITY_PORT:-}
+REALITY_SNI=${REALITY_SNI:-www.microsoft.com}
+HY2_PORT=${HY2_PORT:-}
+HY2_HOP_PORTS=${HY2_HOP_PORTS:-}
+CF_TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
+CF_HOSTNAME=${CF_HOSTNAME:-}
+
+log() { printf '%s edge-gateway: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
+die() {
+  log "error: $*"
+  exit 1
+}
+
+lanes() {
+  [ -n "$REALITY_PORT" ] && echo reality
+  [ -n "$HY2_PORT" ] && echo hy2
+  [ -n "$CF_TUNNEL_TOKEN" ] && echo cf
+  return 0
+}
+
+validate() {
+  [ -n "$(lanes)" ] || die "no lane enabled: set REALITY_PORT, HY2_PORT and/or CF_TUNNEL_TOKEN"
+  if [ -n "$REALITY_PORT$HY2_PORT" ] && [ -z "$PUBLIC_HOST" ]; then
+    die "PUBLIC_HOST is required when REALITY_PORT or HY2_PORT is set"
+  fi
+  if [ -n "$CF_TUNNEL_TOKEN" ] && [ -z "$CF_HOSTNAME" ]; then
+    die "CF_HOSTNAME is required when CF_TUNNEL_TOKEN is set"
+  fi
+  if [ -n "$HY2_HOP_PORTS" ] && ! [[ $HY2_HOP_PORTS =~ ^[0-9]+-[0-9]+$ ]]; then
+    die "HY2_HOP_PORTS must look like 20000-40000"
+  fi
+}
+
+# Secrets are generated once and kept in the data volume, never in the image or the repository.
+ensure_state() {
+  mkdir -p "$DATA_DIR"
+  if [ ! -s "$STATE" ]; then
+    log "generating node secrets in $STATE"
+    local kp
+    kp=$(sing-box generate reality-keypair)
+    umask 077
+    {
+      echo "UUID=$(sing-box generate uuid)"
+      echo "REALITY_PRIVATE_KEY=$(awk '/PrivateKey/{print $2}' <<<"$kp")"
+      echo "REALITY_PUBLIC_KEY=$(awk '/PublicKey/{print $2}' <<<"$kp")"
+      echo "REALITY_SHORT_ID=$(sing-box generate rand 8 --hex)"
+      echo "HY2_PASSWORD=$(sing-box generate rand 24 --hex)"
+      echo "HY2_OBFS_PASSWORD=$(sing-box generate rand 24 --hex)"
+      echo "WS_UUID=$(sing-box generate uuid)"
+      echo "WS_PATH=/$(sing-box generate rand 12 --hex)"
+    } >"$STATE"
+  fi
+  if [ ! -s "$HY2_CERT" ]; then
+    umask 077
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -subj "/CN=$HY2_SNI" -addext "subjectAltName=DNS:$HY2_SNI" \
+      -keyout "$HY2_KEY" -out "$HY2_CERT" 2>/dev/null
+  fi
+  # shellcheck disable=SC1090
+  source "$STATE"
+}
+
+render_server() {
+  jq -n \
+    --arg reality_port "$REALITY_PORT" --arg sni "$REALITY_SNI" --arg uuid "$UUID" \
+    --arg priv "$REALITY_PRIVATE_KEY" --arg sid "$REALITY_SHORT_ID" \
+    --arg hy2_port "$HY2_PORT" --arg hy2_pw "$HY2_PASSWORD" --arg obfs "$HY2_OBFS_PASSWORD" \
+    --arg cert "$HY2_CERT" --arg key "$HY2_KEY" \
+    --arg cf "$CF_TUNNEL_TOKEN" --arg ws_port "$WS_PORT" --arg ws_uuid "$WS_UUID" --arg ws_path "$WS_PATH" '
+    {
+      log: {level: "warn", timestamp: true},
+      inbounds: (
+        (if $reality_port != "" then [{
+          type: "vless", tag: "reality-in", listen: "::", listen_port: ($reality_port | tonumber),
+          users: [{uuid: $uuid, flow: "xtls-rprx-vision"}],
+          tls: {enabled: true, server_name: $sni,
+                reality: {enabled: true, handshake: {server: $sni, server_port: 443},
+                          private_key: $priv, short_id: [$sid]}}
+        }] else [] end)
+        + (if $hy2_port != "" then [{
+          type: "hysteria2", tag: "hy2-in", listen: "::", listen_port: ($hy2_port | tonumber),
+          users: [{password: $hy2_pw}],
+          obfs: {type: "salamander", password: $obfs},
+          tls: {enabled: true, alpn: ["h3"], certificate_path: $cert, key_path: $key}
+        }] else [] end)
+        + (if $cf != "" then [{
+          type: "vless", tag: "ws-in", listen: "127.0.0.1", listen_port: ($ws_port | tonumber),
+          users: [{uuid: $ws_uuid}],
+          transport: {type: "ws", path: $ws_path, max_early_data: 2048,
+                      early_data_header_name: "Sec-WebSocket-Protocol"}
+        }] else [] end)
+      ),
+      outbounds: [{type: "direct", tag: "direct"}]
+    }' >"$SERVER_CONFIG"
+  chmod 600 "$SERVER_CONFIG"
+  sing-box check -c "$SERVER_CONFIG"
+}
+
+# Port hopping: every UDP port of the range is redirected to HY2_PORT.
+# Needs host networking and NET_ADMIN on a Linux host; skipped with a warning otherwise.
+hop_rules() {
+  local action=$1 range=${HY2_HOP_PORTS/-/:} ipt
+  [ -n "$HY2_HOP_PORTS" ] && [ -n "$HY2_PORT" ] || return 0
+  for ipt in iptables ip6tables; do
+    if [ "$action" = add ]; then
+      "$ipt" -t nat -C PREROUTING -p udp --dport "$range" -j REDIRECT --to-ports "$HY2_PORT" 2>/dev/null ||
+        "$ipt" -t nat -A PREROUTING -p udp --dport "$range" -j REDIRECT --to-ports "$HY2_PORT" 2>/dev/null ||
+        log "warning: $ipt port hopping rule failed (needs network_mode: host and cap NET_ADMIN on Linux)"
+    else
+      "$ipt" -t nat -D PREROUTING -p udp --dport "$range" -j REDIRECT --to-ports "$HY2_PORT" 2>/dev/null || true
+    fi
+  done
+}
+
+cmd_serve() {
+  validate
+  ensure_state
+  render_server >/dev/null
+  hop_rules add
+
+  local pids=()
+  sing-box run -c "$SERVER_CONFIG" -D "$DATA_DIR" &
+  pids+=($!)
+  if [ -n "$CF_TUNNEL_TOKEN" ]; then
+    TUNNEL_TOKEN=$CF_TUNNEL_TOKEN cloudflared tunnel --no-autoupdate --metrics "$CF_METRICS" \
+      run --url "http://127.0.0.1:$WS_PORT" &
+    pids+=($!)
+  fi
+  log "node $NODE_NAME up, lanes: $(lanes | paste -sd, -)"
+
+  trap 'hop_rules del; kill "${pids[@]}" 2>/dev/null; exit 0' TERM INT
+  # Any lane process exiting stops the container so the restart policy brings everything back.
+  set +e
+  wait -n "${pids[@]}"
+  local code=$?
+  log "a lane process exited with code $code, stopping"
+  hop_rules del
+  kill "${pids[@]}" 2>/dev/null
+  exit 1
+}
+
+cmd_check() {
+  validate
+  ensure_state
+  render_server
+  log "server config valid, lanes: $(lanes | paste -sd, -)"
+}
+
+cmd_health() {
+  pgrep -x sing-box >/dev/null || {
+    echo "sing-box down"
+    exit 1
+  }
+  if [ -n "$CF_TUNNEL_TOKEN" ]; then
+    curl -fsS --max-time 3 "http://$CF_METRICS/ready" >/dev/null || {
+      echo "cloudflare tunnel not ready"
+      exit 1
+    }
+  fi
+  echo ok
+}
+
+usage() {
+  cat <<'EOF'
+edge-gateway <command>
+  serve                 run the node (default)
+  check                 validate the environment and the server config without serving
+  health                container health check
+EOF
+}
+
+case "${1:-serve}" in
+  serve) cmd_serve ;;
+  check) cmd_check ;;
+  health) cmd_health ;;
+  -h | --help | help) usage ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
