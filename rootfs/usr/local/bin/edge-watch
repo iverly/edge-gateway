@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Probes this node and its peers every WATCH_INTERVAL seconds and sends a Telegram message whenever a
+# probe changes state, so an alert means something moved, not that something is still down.
+#
+# WATCH_PEERS lists other nodes, comma separated:
+#   tcp://host:port   a Reality lane, up when the TCP port accepts a connection
+#   https://host      a Cloudflare tunnel hostname, up unless Cloudflare answers 502/530 (no origin)
+set -uo pipefail
+
+INTERVAL=${WATCH_INTERVAL:-60}
+NODE_NAME=${NODE_NAME:-$(hostname)}
+CF_METRICS=127.0.0.1:20241
+declare -A last
+
+notify() {
+  curl -fsS --max-time 10 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=$1" >/dev/null ||
+    echo "edge-watch: telegram send failed" >&2
+}
+
+probe_tcp() {
+  local host=${1%:*} port=${1##*:}
+  timeout 5 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null
+}
+
+probe_https() {
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$1/") || return 1
+  [ "$code" != 000 ] && [ "$code" != 502 ] && [ "$code" != 530 ]
+}
+
+checks() {
+  echo "sing-box|pgrep -x sing-box"
+  [ -n "${CF_TUNNEL_TOKEN:-}" ] && echo "cloudflare tunnel|curl -fsS --max-time 5 http://$CF_METRICS/ready"
+  echo "internet egress|curl -fsS -o /dev/null --max-time 10 https://www.gstatic.com/generate_204"
+  local peer
+  IFS=, read -ra peers <<<"${WATCH_PEERS:-}"
+  for peer in "${peers[@]}"; do
+    case "$peer" in
+      tcp://*) echo "peer ${peer#tcp://}|probe_tcp ${peer#tcp://}" ;;
+      https://*) echo "peer ${peer#https://}|probe_https ${peer#https://}" ;;
+      '') ;;
+      *) echo "edge-watch: ignoring peer $peer (use tcp://host:port or https://host)" >&2 ;;
+    esac
+  done
+}
+
+notify "🟢 $NODE_NAME: watch started"
+while sleep "$INTERVAL"; do
+  while IFS='|' read -r name check; do
+    if eval "$check" >/dev/null 2>&1; then state=up; else state=down; fi
+    if [ "${last[$name]:-up}" != "$state" ]; then
+      if [ "$state" = up ]; then notify "🟢 $NODE_NAME: $name is back"; else notify "🔴 $NODE_NAME: $name is down"; fi
+    fi
+    last[$name]=$state
+  done < <(checks)
+done

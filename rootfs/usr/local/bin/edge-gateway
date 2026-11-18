@@ -144,6 +144,9 @@ cmd_serve() {
       run --url "http://127.0.0.1:$WS_PORT" &
     pids+=($!)
   fi
+  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+    edge-watch &
+  fi
   log "node $NODE_NAME up, lanes: $(lanes | paste -sd, -)"
 
   trap 'hop_rules del; kill "${pids[@]}" 2>/dev/null; exit 0' TERM INT
