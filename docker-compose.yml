@@ -1,0 +1,12 @@
+# One exit node. Host networking lets Hysteria2 receive UDP without NAT in between and lets the
+# port hopping rules reach the host's firewall; NET_ADMIN is only used for those rules.
+services:
+  edge-gateway:
+    image: ghcr.io/iverly/edge-gateway:latest
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    env_file: .env
+    volumes:
+      - ./data:/data
