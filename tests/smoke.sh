@@ -49,6 +49,8 @@ done
 
 docker exec "$SERVER" edge-gateway node >"$WORK/node.json"
 jq -e '.reality and .hy2 and (.cf == null)' "$WORK/node.json" >/dev/null || fail "node descriptor"
+docker exec -e REALITY_PUBLIC_PORT=443 -e HY2_PUBLIC_PORT=8443 "$SERVER" edge-gateway node |
+  jq -e '.reality.port == 443 and .hy2.port == 8443' >/dev/null || fail "public ports in descriptor"
 
 echo "== builds a valid client profile"
 docker run --rm -v "$WORK:/w" "$IMAGE" profile /w/node.json >"$WORK/profile.json"

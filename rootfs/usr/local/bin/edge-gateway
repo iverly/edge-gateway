@@ -19,6 +19,9 @@ PUBLIC_HOST=${PUBLIC_HOST:-}
 REALITY_PORT=${REALITY_PORT:-}
 REALITY_SNI=${REALITY_SNI:-www.microsoft.com}
 HY2_PORT=${HY2_PORT:-}
+# Ports clients connect to, when a router forwards a different public port to the listening one.
+REALITY_PUBLIC_PORT=${REALITY_PUBLIC_PORT:-$REALITY_PORT}
+HY2_PUBLIC_PORT=${HY2_PUBLIC_PORT:-$HY2_PORT}
 HY2_HOP_PORTS=${HY2_HOP_PORTS:-}
 CF_TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
 CF_HOSTNAME=${CF_HOSTNAME:-}
@@ -187,9 +190,9 @@ cmd_node() {
   ensure_state
   jq -n \
     --arg name "$NODE_NAME" --arg host "$PUBLIC_HOST" \
-    --arg reality_port "$REALITY_PORT" --arg sni "$REALITY_SNI" --arg uuid "$UUID" \
+    --arg reality_port "$REALITY_PUBLIC_PORT" --arg sni "$REALITY_SNI" --arg uuid "$UUID" \
     --arg pub "$REALITY_PUBLIC_KEY" --arg sid "$REALITY_SHORT_ID" \
-    --arg hy2_port "$HY2_PORT" --arg hop "$HY2_HOP_PORTS" --arg hy2_pw "$HY2_PASSWORD" \
+    --arg hy2_port "$HY2_PUBLIC_PORT" --arg hop "$HY2_HOP_PORTS" --arg hy2_pw "$HY2_PASSWORD" \
     --arg obfs "$HY2_OBFS_PASSWORD" --arg hy2_sni "$HY2_SNI" --rawfile cert "$HY2_CERT" \
     --arg cf "$CF_TUNNEL_TOKEN" --arg cf_host "$CF_HOSTNAME" --arg ws_uuid "$WS_UUID" --arg ws_path "$WS_PATH" '
     {
