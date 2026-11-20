@@ -219,12 +219,19 @@ cmd_node() {
     }'
 }
 
-# Client profile for the sing-box apps (macOS, iOS, Android) and the sing-box CLI on a travel router.
-# Chinese domains and IPs go direct, a fixed list of foreign services is forced through the tunnel,
-# everything else takes the fastest lane among all nodes.
+# Client profile for the sing-box apps (macOS, iOS, Android) and, with --router, for sing-box on an
+# OpenWrt travel router. Chinese domains and IPs go direct, a fixed list of foreign services is forced
+# through the tunnel, everything else takes the fastest lane among all nodes.
+# --router captures the traffic of every device on the router: auto_redirect hands forwarded TCP to
+# sing-box through nftables, which a TUN route alone does not catch on a router.
 cmd_profile() {
-  [ $# -gt 0 ] || die "usage: profile <node.json>..."
-  jq -s '
+  local router=0
+  if [ "${1:-}" = --router ]; then
+    router=1
+    shift
+  fi
+  [ $# -gt 0 ] || die "usage: profile [--router] <node.json>..."
+  jq -s --arg router "$router" '
     def outs(n):
       (if n.reality then [{
         type: "vless", tag: "\(n.name)-reality", server: n.reality.host, server_port: n.reality.port,
@@ -257,7 +264,8 @@ cmd_profile() {
           final: "remote",
           strategy: "ipv4_only"
         },
-        inbounds: [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}],
+        inbounds: [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}
+                   + (if $router == "1" then {interface_name: "sbtun", auto_redirect: true} else {} end)],
         outbounds: (
           [{type: "selector", tag: "proxy", outbounds: (["auto"] + $tags), default: "auto",
             interrupt_exist_connections: true},
@@ -316,7 +324,9 @@ edge-gateway <command>
   check                 validate the environment and the server config without serving
   health                container health check
   node                  print this node's client descriptor (contains secrets)
-  profile <node.json>…  build a sing-box client profile from one or more descriptors
+  profile [--router] <node.json>…
+                        build a sing-box client profile from one or more descriptors;
+                        --router targets sing-box on an OpenWrt travel router
   links <node.json>…    print share links and QR codes (QR=0 to skip QR codes)
 EOF
 }
