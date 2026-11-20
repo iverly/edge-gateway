@@ -58,6 +58,12 @@ docker run --rm -v "$WORK:/w" "$IMAGE" profile /w/node.json >"$WORK/profile.json
 docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/profile.json ||
   fail "client profile rejected by sing-box"
 
+echo "== builds a valid router profile"
+docker run --rm -v "$WORK:/w" "$IMAGE" profile --router /w/node.json >"$WORK/router.json"
+jq -e '.inbounds[0].auto_redirect == true' "$WORK/router.json" >/dev/null || fail "router profile has no auto_redirect"
+docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/router.json ||
+  fail "router profile rejected by sing-box"
+
 echo "== prints one share link per lane"
 docker run --rm -e QR=0 -v "$WORK:/w" "$IMAGE" links /w/node.json >"$WORK/links.txt" ||
   fail "share links exit code"
