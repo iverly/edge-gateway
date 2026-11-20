@@ -56,9 +56,11 @@ Download the profile's rule sets once before travelling: the apps cache them.
 
 `profile --router` builds a profile for sing-box on an OpenWrt travel router, covering every device
 on its Wi-Fi. `router/install.sh` installs it on a GL.iNet router over SSH: the official sing-box
-binary, a service, and the side switch as the VPN on/off control, also at boot. Its files are
-listed for firmware upgrades that keep settings; running the installer again restores everything
-after a reset.
+binary, a service, a firewall zone for its TUN, and the side switch as the VPN on/off control, also
+at boot. While the VPN runs, the router's resolver forwards every query to sing-box, so devices get
+the same split DNS as the apps. GL.iNet's own DNS mode must stay on Automatic: its encrypted DNS
+resolves outside the tunnel. The files are listed for firmware upgrades that keep settings; running
+the installer again restores everything after a reset.
 
 ```sh
 docker compose run --rm -v "$PWD:/w" edge-gateway profile --router /w/home.json > router.json
