@@ -7,14 +7,15 @@ images.
 
 ## Layout
 
-| Path                                 | What                                                            |
-| ------------------------------------ | --------------------------------------------------------------- |
-| `rootfs/usr/local/bin/edge-gateway`  | entrypoint: secrets, server config, serve, node, profile, links |
-| `rootfs/usr/local/bin/edge-ddns`     | keeps the Cloudflare A record of `PUBLIC_HOST` on the public IP |
-| `rootfs/usr/local/bin/edge-watch`    | Telegram alerts on lane and peer state changes                  |
-| `Dockerfile`                         | the image; sing-box and cloudflared versions are build args     |
-| `docker-compose.yml`, `.env.example` | how a node runs; `.env.example` documents every setting         |
-| `tests/smoke.sh`                     | end-to-end test of an image                                     |
+| Path                                 | What                                                                         |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `rootfs/usr/local/bin/edge-gateway`  | entrypoint: secrets, server config, serve, node, profile, links              |
+| `rootfs/usr/local/bin/edge-ddns`     | keeps the Cloudflare A record of `PUBLIC_HOST` on the public IP              |
+| `rootfs/usr/local/bin/edge-watch`    | Telegram alerts on lane and peer state changes                               |
+| `Dockerfile`                         | the image; sing-box and cloudflared versions are build args                  |
+| `docker-compose.yml`, `.env.example` | how a node runs; `.env.example` documents every setting                      |
+| `router/`                            | sing-box on a GL.iNet travel router: service, side switch handler, installer |
+| `tests/smoke.sh`                     | end-to-end test of an image                                                  |
 
 ## Rules
 

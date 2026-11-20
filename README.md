@@ -52,6 +52,19 @@ docker compose run --rm -v "$PWD:/w" edge-gateway links /w/home.json  # share li
 
 Download the profile's rule sets once before travelling: the apps cache them.
 
+## Travel router
+
+`profile --router` builds a profile for sing-box on an OpenWrt travel router, covering every device
+on its Wi-Fi. `router/install.sh` installs it on a GL.iNet router over SSH: the official sing-box
+binary, a service, and the side switch as the VPN on/off control, also at boot. Its files are
+listed for firmware upgrades that keep settings; running the installer again restores everything
+after a reset.
+
+```sh
+docker compose run --rm -v "$PWD:/w" edge-gateway profile --router /w/home.json > router.json
+router/install.sh root@192.168.8.1 router.json
+```
+
 ## Dynamic DNS
 
 A node at home whose public IP changes can keep its `PUBLIC_HOST` record up to date on
