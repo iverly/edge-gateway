@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+# sing-box on a GL.iNet travel router. Not enabled at boot on purpose: the side switch decides,
+# GL.iNet replays its position at boot through /etc/gl-switch.d/singbox.sh.
+
+# rc.common reads these.
+# shellcheck disable=SC2034
+USE_PROCD=1
+# shellcheck disable=SC2034
+START=99
+# shellcheck disable=SC2034
+STOP=10
+
+DIR=/etc/sing-box
+
+start_service() {
+  procd_open_instance
+  procd_set_param command "$DIR/bin/sing-box" run -c "$DIR/config.json" -D "$DIR"
+  # Retry forever: at boot the uplink (hotel Wi-Fi, cable, phone) may come up minutes later.
+  procd_set_param respawn 3600 10 0
+  procd_set_param stdout 1
+  procd_set_param stderr 1
+  procd_close_instance
+}
