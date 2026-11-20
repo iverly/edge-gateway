@@ -24,9 +24,10 @@ jobs:
       - name: shell
         run: |
           sudo apt-get install -y shellcheck shfmt >/dev/null
-          files="rootfs/usr/local/bin/* tests/*.sh scripts/*.sh"
+          files="rootfs/usr/local/bin/* tests/*.sh scripts/*.sh router/*.sh"
           shfmt -i 2 -ci -d $files
           shellcheck $files
+          shellcheck -s sh router/sing-box.init
       - run: pnpm format:check
       - name: commits
         if: github.event_name == 'pull_request'
