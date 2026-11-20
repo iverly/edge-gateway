@@ -3,6 +3,7 @@
 const scopes = [
   'gateway', // rootfs/usr/local/bin/edge-gateway. Example: "feat(gateway): render the hysteria2 lane"
   'ddns', // rootfs/usr/local/bin/edge-ddns. Example: "fix(ddns): skip IPv6 addresses"
+  'router', // router/. Example: "feat(router): wire the side switch"
   'watch', // rootfs/usr/local/bin/edge-watch. Example: "feat(watch): probe the peers"
   'image', // Dockerfile, .dockerignore. Example: "chore(image): bump sing-box to v1.14.5"
   'compose', // docker-compose.yml, .env.example. Example: "feat(compose): mount the data volume"
