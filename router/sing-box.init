@@ -1,6 +1,10 @@
 #!/bin/sh /etc/rc.common
 # sing-box on a GL.iNet travel router. Not enabled at boot on purpose: the side switch decides,
 # GL.iNet replays its position at boot through /etc/gl-switch.d/singbox.sh.
+#
+# While it runs, the router's own resolver forwards every query to sing-box (127.0.0.1:5335):
+# devices ask the router for DNS, and those queries never cross the TUN. The override lives in
+# /tmp, so it disappears with the service and at reboot, and GL.iNet's settings are never edited.
 
 # rc.common reads these.
 # shellcheck disable=SC2034
@@ -11,6 +15,7 @@ START=99
 STOP=10
 
 DIR=/etc/sing-box
+DNS_OVERRIDE=/tmp/dnsmasq.d/edge-gateway.conf
 
 start_service() {
   procd_open_instance
@@ -20,4 +25,13 @@ start_service() {
   procd_set_param stdout 1
   procd_set_param stderr 1
   procd_close_instance
+
+  mkdir -p /tmp/dnsmasq.d
+  printf 'no-resolv\nserver=127.0.0.1#5335\n' >"$DNS_OVERRIDE"
+  /etc/init.d/dnsmasq restart
+}
+
+stop_service() {
+  rm -f "$DNS_OVERRIDE"
+  /etc/init.d/dnsmasq restart
 }

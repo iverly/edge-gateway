@@ -9,6 +9,7 @@ case "$1" in
     ;;
   off)
     logger -t edge-gateway "switch off: stopping sing-box"
-    /etc/init.d/sing-box stop
+    /etc/init.d/sing-box running 2>/dev/null && /etc/init.d/sing-box stop
     ;;
 esac
+exit 0
