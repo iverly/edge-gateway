@@ -60,7 +60,11 @@ docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/profile
 
 echo "== builds a valid router profile"
 docker run --rm -v "$WORK:/w" "$IMAGE" profile --router /w/node.json >"$WORK/router.json"
-jq -e '.inbounds[0].auto_redirect == true' "$WORK/router.json" >/dev/null || fail "router profile has no auto_redirect"
+jq -e '.inbounds[0].interface_name == "sbtun" and (.inbounds[0].auto_redirect | not)
+  and (.inbounds[1].tag == "dns-in" and .inbounds[1].listen_port == 5335)
+  and .route.rules[0] == {inbound: "dns-in", action: "hijack-dns"}' "$WORK/router.json" >/dev/null ||
+  fail "router profile shape"
+jq -e '.inbounds | length == 1' "$WORK/profile.json" >/dev/null || fail "app profile gained router inbounds"
 docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/router.json ||
   fail "router profile rejected by sing-box"
 
