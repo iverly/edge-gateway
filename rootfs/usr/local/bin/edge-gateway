@@ -222,8 +222,10 @@ cmd_node() {
 # Client profile for the sing-box apps (macOS, iOS, Android) and, with --router, for sing-box on an
 # OpenWrt travel router. Chinese domains and IPs go direct, a fixed list of foreign services is forced
 # through the tunnel, everything else takes the fastest lane among all nodes.
-# --router captures the traffic of every device on the router: auto_redirect hands forwarded TCP to
-# sing-box through nftables, which a TUN route alone does not catch on a router.
+# --router names the TUN interface so the router's firewall can let its LAN through it, and adds a DNS
+# server on 127.0.0.1:5335 for the router's own resolver to forward to, since queries sent to the
+# router itself never cross the TUN. auto_redirect is left off: its nftables rules fail on the older
+# kernels travel routers ship.
 cmd_profile() {
   local router=0
   if [ "${1:-}" = --router ]; then
@@ -264,8 +266,11 @@ cmd_profile() {
           final: "remote",
           strategy: "ipv4_only"
         },
-        inbounds: [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}
-                   + (if $router == "1" then {interface_name: "sbtun", auto_redirect: true} else {} end)],
+        inbounds: (
+          [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}
+           + (if $router == "1" then {interface_name: "sbtun"} else {} end)]
+          + (if $router == "1" then [{type: "direct", tag: "dns-in", listen: "127.0.0.1", listen_port: 5335}] else [] end)
+        ),
         outbounds: (
           [{type: "selector", tag: "proxy", outbounds: (["auto"] + $tags), default: "auto",
             interrupt_exist_connections: true},
@@ -275,7 +280,8 @@ cmd_profile() {
           + [{type: "direct", tag: "direct"}]
         ),
         route: {
-          rules: [
+          rules: (
+            (if $router == "1" then [{inbound: "dns-in", action: "hijack-dns"}] else [] end) + [
             {action: "sniff"},
             {protocol: "dns", action: "hijack-dns"},
             {ip_is_private: true, outbound: "direct"},
@@ -285,7 +291,7 @@ cmd_profile() {
                              "linear.app", "x.com", "whatsapp.net", "telegram.org"],
              outbound: "proxy"},
             {rule_set: ["geosite-cn", "geoip-cn"], outbound: "direct"}
-          ],
+          ]),
           rule_set: [
             {type: "remote", tag: "geosite-cn", format: "binary",
              url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
