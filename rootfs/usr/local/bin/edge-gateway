@@ -222,6 +222,12 @@ cmd_node() {
 # Client profile for the sing-box apps (macOS, iOS, Android) and, with --router, for sing-box on an
 # OpenWrt travel router. Chinese domains and IPs go direct, a fixed list of foreign services is forced
 # through the tunnel, everything else takes the fastest lane among all nodes.
+# Chinese domains resolve for real through a Chinese resolver and go direct. Every other name gets
+# a placeholder address from 198.18.0.0/15: connections to it carry the name through the tunnel and
+# the node resolves it with its own network's resolver, so no fixed resolver address has to be
+# reachable from the node, and no foreign name is ever resolved from the client's network. Only the
+# rarer query types (HTTPS, TXT, MX...) still go to 1.1.1.1 over DNS over HTTPS through the tunnel.
+#
 # --router names the TUN interface so the router's firewall can let its LAN through it, and adds a DNS
 # server on 127.0.0.1:5335 for the router's own resolver to forward to, since queries sent to the
 # router itself never cross the TUN. auto_redirect is left off: its nftables rules fail on the older
@@ -260,9 +266,13 @@ cmd_profile() {
         dns: {
           servers: [
             {type: "https", tag: "remote", server: "1.1.1.1", detour: "proxy"},
-            {type: "udp", tag: "cn", server: "223.5.5.5"}
+            {type: "udp", tag: "cn", server: "223.5.5.5"},
+            {type: "fakeip", tag: "fakeip", inet4_range: "198.18.0.0/15", inet6_range: "fc00::/18"}
           ],
-          rules: [{rule_set: "geosite-cn", server: "cn"}],
+          rules: [
+            {rule_set: "geosite-cn", server: "cn"},
+            {query_type: ["A", "AAAA"], server: "fakeip", rewrite_ttl: 1}
+          ],
           final: "remote",
           strategy: "ipv4_only"
         },
@@ -304,7 +314,7 @@ cmd_profile() {
           auto_detect_interface: true,
           default_domain_resolver: "cn"
         },
-        experimental: {cache_file: {enabled: true}}
+        experimental: {cache_file: {enabled: true, store_fakeip: true}}
       }' "$@"
 }
 

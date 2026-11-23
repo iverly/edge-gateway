@@ -47,7 +47,7 @@ docker compose run --rm -v "$PWD:/w" edge-gateway links /w/home.json  # share li
 - **Descriptors** (`node`) hold the node's secrets: keep them private.
 - **`profile.json`** imports into the sing-box apps (macOS, iOS, Android) or runs with the sing-box
   CLI on a travel router. Chinese domains and IPs go direct; everything else takes the fastest
-  lane.
+  lane, and its name is resolved by the node on the far side, never on the local network.
 - **Share links** import into Shadowrocket, Hiddify or v2rayN.
 
 Download the profile's rule sets once before travelling: the apps cache them.

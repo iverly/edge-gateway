@@ -94,6 +94,24 @@ for lane in reality hy2; do
   " >/dev/null 2>&1; then fail "$lane lane reached a private address"; fi
 done
 
+echo "== carries placeholder-address names through the tunnel for the node to resolve"
+jq -e '.dns.servers | any(.type == "fakeip")' "$WORK/profile.json" >/dev/null || fail "profile without fake IPs"
+# Docker's own resolver (127.0.0.11) resolves the server's container name for the outbound.
+jq '{
+  log: {level: "error"},
+  dns: {servers: ([{type: "udp", tag: "upstream", server: "127.0.0.11"}] + [.dns.servers[] | select(.type == "fakeip")]),
+        rules: [.dns.rules[] | select(.server == "fakeip")], final: "upstream", strategy: "ipv4_only"},
+  inbounds: [{type: "mixed", listen: "127.0.0.1", listen_port: 2080},
+             {type: "direct", tag: "dns-in", listen: "127.0.0.1", listen_port: 53}],
+  outbounds: [.outbounds[] | select(.tag == "smoke-reality")],
+  route: {rules: [{inbound: "dns-in", action: "hijack-dns"}], default_domain_resolver: "upstream"}
+}' "$WORK/profile.json" >"$WORK/fakeip.json"
+docker run --rm --network "$NET" --dns 127.0.0.1 -v "$WORK:/w" --entrypoint sh "$IMAGE" -c "
+  sing-box run -c /w/fakeip.json & sleep 2
+  getent hosts www.gstatic.com | grep -q '^198\.1[89]\.' || { echo 'no placeholder address'; exit 1; }
+  curl -fsS -o /dev/null --max-time 15 -x socks5://127.0.0.1:2080 https://www.gstatic.com/generate_204
+" || fail "fake-IP name not carried through the tunnel"
+
 echo "== reaches the node's private network with ALLOW_PRIVATE=1"
 docker rm -f "$SERVER" >/dev/null
 docker run -d --name "$SERVER" --network "$NET" \
