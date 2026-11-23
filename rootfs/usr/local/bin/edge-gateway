@@ -228,6 +228,10 @@ cmd_node() {
 # reachable from the node, and no foreign name is ever resolved from the client's network. Only the
 # rarer query types (HTTPS, TXT, MX...) still go to 1.1.1.1 over DNS over HTTPS through the tunnel.
 #
+# Foreign UDP (calls, video, HTTP/3) takes the Hysteria2 lanes when the profile has any: QUIC
+# carries lossy real-time traffic far better than a TCP lane. When UDP is blocked on the way, the
+# apps fall back to TCP on their own, and TCP keeps using every lane.
+#
 # --router names the TUN interface so the router's firewall can let its LAN through it, and adds a DNS
 # server on 127.0.0.1:5335 for the router's own resolver to forward to, since queries sent to the
 # router itself never cross the TUN. auto_redirect is left off: its nftables rules fail on the older
@@ -261,6 +265,7 @@ cmd_profile() {
       }] else [] end);
     (map(outs(.)) | add) as $lanes
     | ($lanes | map(.tag)) as $tags
+    | ($lanes | map(select(.type == "hysteria2") | .tag)) as $udp_tags
     | {
         log: {level: "warn"},
         dns: {
@@ -286,6 +291,10 @@ cmd_profile() {
             interrupt_exist_connections: true},
            {type: "urltest", tag: "auto", outbounds: $tags, url: "https://www.gstatic.com/generate_204",
             interval: "1m", tolerance: 80}]
+          + (if ($udp_tags | length) > 0 then
+               [{type: "urltest", tag: "udp", outbounds: $udp_tags, url: "https://www.gstatic.com/generate_204",
+                 interval: "1m", tolerance: 80}]
+             else [] end)
           + $lanes
           + [{type: "direct", tag: "direct"}]
         ),
@@ -294,7 +303,11 @@ cmd_profile() {
             (if $router == "1" then [{inbound: "dns-in", action: "hijack-dns"}] else [] end) + [
             {action: "sniff"},
             {protocol: "dns", action: "hijack-dns"},
-            {ip_is_private: true, outbound: "direct"},
+            {ip_is_private: true, outbound: "direct"}]
+            + (if ($udp_tags | length) > 0 then
+                 [{type: "logical", mode: "and", outbound: "udp",
+                   rules: [{network: "udp"}, {rule_set: ["geosite-cn", "geoip-cn"], invert: true}]}]
+               else [] end) + [
             {domain_suffix: ["anthropic.com", "claude.ai", "claude.com", "openai.com", "chatgpt.com",
                              "google.com", "googleapis.com", "gstatic.com", "youtube.com", "gmail.com",
                              "github.com", "githubusercontent.com", "slack.com", "notion.so", "figma.com",

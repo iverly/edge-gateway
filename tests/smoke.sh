@@ -65,6 +65,8 @@ jq -e '.inbounds[0].interface_name == "sbtun" and (.inbounds[0].auto_redirect | 
   and .route.rules[0] == {inbound: "dns-in", action: "hijack-dns"}' "$WORK/router.json" >/dev/null ||
   fail "router profile shape"
 jq -e '.inbounds | length == 1' "$WORK/profile.json" >/dev/null || fail "app profile gained router inbounds"
+jq -e '(.outbounds[] | select(.tag == "udp") | .outbounds == ["smoke-hy2"])
+  and (.route.rules | any(.outbound == "udp"))' "$WORK/profile.json" >/dev/null || fail "UDP not sent to Hysteria2"
 docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/router.json ||
   fail "router profile rejected by sing-box"
 
