@@ -65,6 +65,8 @@ jq -e '.inbounds[0].interface_name == "sbtun" and (.inbounds[0].auto_redirect | 
   and .route.rules[0] == {inbound: "dns-in", action: "hijack-dns"}' "$WORK/router.json" >/dev/null ||
   fail "router profile shape"
 jq -e '.inbounds | length == 1' "$WORK/profile.json" >/dev/null || fail "app profile gained router inbounds"
+jq -e '.inbounds[0].route_exclude_address | index("100.64.0.0/10")' "$WORK/profile.json" >/dev/null ||
+  fail "Tailscale addresses not left to Tailscale"
 docker run --rm -v "$WORK:/w" --entrypoint sing-box "$IMAGE" check -c /w/router.json ||
   fail "router profile rejected by sing-box"
 
