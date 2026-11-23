@@ -267,8 +267,7 @@ cmd_profile() {
           strategy: "ipv4_only"
         },
         inbounds: (
-          [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true,
-            route_exclude_address: ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]}
+          [{type: "tun", tag: "tun-in", address: ["172.19.0.1/30"], auto_route: true, strict_route: true}
            + (if $router == "1" then {interface_name: "sbtun"} else {} end)]
           + (if $router == "1" then [{type: "direct", tag: "dns-in", listen: "127.0.0.1", listen_port: 5335}] else [] end)
         ),
