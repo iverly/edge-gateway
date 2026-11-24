@@ -95,6 +95,11 @@ done
 . /lib/functions/gl_util.sh
 position=$(get_switch_button_status)
 echo "switch position: $position"
-/etc/gl-switch.d/singbox.sh "$position"
+# A running sing-box keeps its old binary and profile until it restarts.
+if [ "$position" = on ]; then
+  /etc/init.d/sing-box restart
+else
+  /etc/gl-switch.d/singbox.sh off
+fi
 REMOTE
 echo "== done"
